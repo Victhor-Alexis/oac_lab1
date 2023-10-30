@@ -8,7 +8,7 @@
 	conteudoData: .space 1024  # Espaço para armazenar dados do arquivo .mif
 	mensagemErro: .asciiz "Há um erro de sintaxe!"
 	
-	armazenar_data_tmp: .space 11 	# armazenar temporariamente o dado a ser escrito em uma linha no .mif
+	armazenar_data_tmp: .space 22 	# armazenar temporariamente o dado a ser escrito em uma linha no .mif
 	output_string: .asciiz "\n00000000 : 00000000;"  # Para armazenar a linha que vai ser escrita no .mif
 	hex_digits: .asciiz "0123456789abcdef"
 .text
@@ -118,7 +118,7 @@ analisa_single_data:
 	beq $t3, 10, salvar_data_word	# Se for uma quebra de linha, ir salvar dados
 	beq $t3, 44, salvar_data_word	# Se for uma vírgula, ir salvar dados
 	
-	beq $t3, 120, verificar_hex	# Se achar um x, verificar se é um hexadecimal no padrão correto
+	beq $t3, 120, tratar_hex_direto	# Se achar um x, verificar se é um hexadecimal no padrão correto
 	
 	ble $t3, 47  print_erro		# Se for um valor não numérico, printar erro:		
 	bge $t3, 58, print_erro		# Se for um valor não numérico, printar erro:
@@ -136,10 +136,12 @@ tratar_negativo:
 	li $s6, 1
 	j pular_letra_word
 	
-verificar_hex:				# Caso algum valor da variável já seja hexadecimal
+tratar_hex_direto:			# Caso algum valor da variável já seja hexadecimal
 	li $t7, 0			# Para contar se tem 8 bytes	
-	sb $t3, 0($t2)  		# Armazena o byte com o código de 'x' em armazenar_data_tmp
-loop_verifica_num:
+	li $t8, 11			# Posição inicial para precheencher dado da linha a ser salva no .mif
+	jal zerar_output_string
+	
+loop_verifica_hex:
 	lb $t3, 1($a0)			# Carrega próximo byte a ser verificado
 	ble $t3, 47  print_erro		# Se for um valor não numérico, printar erro:		
 	sge $t1, $t3, 58		# Se for um valor não numérico, talvez seja erro, guardar operação em $t1
@@ -147,21 +149,35 @@ loop_verifica_num:
 	bne $t1, $t5, print_erro	# Se os valores são diferentes, o caractere está entre 58 e antes de 97
 	bge $t3, 103, print_erro
 	
-	beq $t7, 7, debug
-	
 	addi $a0, $a0, 1
 	addi $t4, $t4, -1
 	addi $t7, $t7, 1
-	addi $t2, $t2, 1		# Incrementar armazenador do numero do dado atual
 	
-	sb $t3, 0($t2)			# Armazena o byte em armazenar_data_tmp
+	addi $t8, $t8, 1		# Incrementar contador da posição em output_string
+
+	sb $t3, output_string($t8)
 	
-	bne $t7, 8, loop_verifica_num
+	bne $t7, 8, loop_verifica_hex   # Quando preencher os 8 bytes, continue
+	
+	# ----- Verificar se o próximo byte tem o código da quebra de linha para continuar a verificação na próxima linha: -----
+	
+	addi $a0, $a0, 1 
+	lb $t2, 0($a0)
+	move $s5, $t2 			# Guardar o \n para indicar que devo pular a linha depois de salvar o dado
+	
+	#------------------------------------------------------------
+	addi $a0, $a0, 1
+	addi $t4, $t4, -2
+	
+	li $t5, 8			# Posição inicial para escrever na parte do endereço
+	move $t7, $s3			# Temporária com valor da quantidade de dados na memória para não modificar s3 com o valor original
+	j convert_loop_endereco		# Como o dado já foi salvo, pular para salvar o endereço
+	
 	
 salvar_data_word:
 	# $s5 é para guardar por qual caractere eu entrei no salvar, se foi por (,) ou (\n) - Definir o retorno depois de armazenar linha no buffer
 	# Se for (\n) vai ser necessário voltar a caçar novos (.word) depois de guardar o valor atual
-	move $s5, $t3, 
+	move $s5, $t3
 	
 	addi $a0, $a0, 1
 	la $t2, armazenar_data_tmp	# Dado da variável para ser manupulado - ex: .word (123) - o 123
@@ -199,20 +215,20 @@ converte_hex:
 keep_convert:
 	jal zerar_output_string
 
-    	li $t1, 19      	# Posição inicial da string com a parte do dado no formato do .mif
-    	li $t5,	8		# Posição inicial da string com a parte do endereço no formato do .mif
-    	move $t7, $s3		# Temporária com valor da quantidade de dados na memória para não modificar s3 com o valor original
+    	li $t1, 19      		# Posição inicial da string com a parte do dado no formato do .mif
+    	li $t5,	8			# Posição inicial da string com a parte do endereço no formato do .mif
+    	move $t7, $s3			# Temporária com valor da quantidade de dados na memória para não modificar s3 com o valor original
     	
 convert_loop_data:
 	andi $t2, $t6, 0xF  		# Get the lowest 4 bits of the integer
     	lb $t3, hex_digits($t2)  	# Get the corresponding hexadecimal character
-
+    	
     	sb $t3, output_string($t1)
     
 	# Decrement the character position
     	subi $t1, $t1, 1
 
-   	 # Shift the integer right by 4 bits
+   	 # Shift de 4 bits no inteiro
     	srl $t6, $t6, 4
 
     	bnez $t6, convert_loop_data
@@ -258,6 +274,18 @@ print_erro:
 	syscall	
 	
 fechar_arquivo:
+	la $s2, conteudoData
+loop_print:	
+	move $a0, $s2
+	li $v0, 4
+	syscall
+		
+	addi $s2, $s2, 22
+	addi $s3, $s3, -1
+	
+	bne $s3, $zero, loop_print
+	
+
 	li $v0, 16  		# Chama a syscall para fechar o arquivo
 	move $a0, $s1  		# Passa o descritor do arquivo
 	syscall	
@@ -305,59 +333,3 @@ zerar_dado:
 	jr $ra
 	
 # ------------------------------------------------------------------------
-debug:
-	la $a0, armazenar_data_tmp
-	li $v0, 4
-	syscall
-	j fechar_arquivo
-	
-debug_write_file:
-	la $s2, conteudoData
-	
-	move $a0, $s2
-	li $v0, 4
-	syscall
-		
-	addi $s2, $s2, 22
-	
-	move $a0, $s2
-	li $v0, 4
-	syscall
-	
-	addi $s2, $s2, 22
-	
-	move $a0, $s2
-	li $v0, 4
-	syscall
-
-	addi $s2, $s2, 22
-	
-	move $a0, $s2
-	li $v0, 4
-	syscall
-
-	addi $s2, $s2, 22
-	
-	move $a0, $s2
-	li $v0, 4
-	syscall
-	
-	addi $s2, $s2, 22
-	
-	move $a0, $s2
-	li $v0, 4
-	syscall					
-	
-	addi $s2, $s2, 22
-	
-	move $a0, $s2
-	li $v0, 4
-	syscall		
-	
-	addi $s2, $s2, 22
-	
-	move $a0, $s2
-	li $v0, 4
-	syscall	
-						
-	j fechar_arquivo
