@@ -3,8 +3,8 @@
 	conteudoArquivo: .space 1024  # Espaço para armazenar o conteúdo do arquivo
 	buffer_data: .space 64  # Buffer para armazenar a linha
 	
-	arquivoGeradoUrl: "/home/victhor/Downloads/data.mif"  
-	conteudoHeader: .asciiz "DEPTH = 16384;\nWIDTH = 32;\nADDRESS_RADIX = HEX;\nDATA_RADIX = HEX;\nCONTENT\nBEGIN\n\n"
+	arquivoGeradoUrl: "/home/victhor/Downloads/teste.mif"  
+	conteudoHeader: .asciiz "DEPTH = 16384;\nWIDTH = 32;\nADDRESS_RADIX = HEX;\nDATA_RADIX = HEX;\nCONTENT\nBEGIN\n"
 	conteudoData: .space 1024  # Espaço para armazenar dados do arquivo .mif
 	mensagemErro: .asciiz "Há um erro de sintaxe!"
 	
@@ -211,7 +211,6 @@ tornar_valor_negativo:
 	
 converte_hex:
 	bne $s6, 0, tornar_valor_negativo
-	
 keep_convert:
 	jal zerar_output_string
 
@@ -275,19 +274,20 @@ print_erro:
 	
 fechar_arquivo:
 	la $s2, conteudoData
-loop_print:	
-	move $a0, $s2
-	li $v0, 4
-	syscall
-		
+loop_escrever_conteudo:
+	li $v0, 15  			# Chama a syscall para escrever em um arquivo
+	move $a0, $s1  			# Passa o descritor do arquivo
+	move $a1, $s2  			# Passa o conteúdo da linha a ser escrita
+	la $a2, 21  			# Passa o tamanho do conteudoData
+	syscall	
+	
 	addi $s2, $s2, 22
 	addi $s3, $s3, -1
 	
-	bne $s3, $zero, loop_print
-	
+	bne $s3, 0, loop_escrever_conteudo
 
-	li $v0, 16  		# Chama a syscall para fechar o arquivo
-	move $a0, $s1  		# Passa o descritor do arquivo
+	li $v0, 16  			# Chama a syscall para fechar o arquivo
+	move $a0, $s1  			# Passa o descritor do arquivo
 	syscall	
 
 # -------------------------------- Terminar --------------------------------	
