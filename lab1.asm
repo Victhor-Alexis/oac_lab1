@@ -11,7 +11,8 @@
 	conteudoHeader: .asciiz "DEPTH = 16384;\nWIDTH = 32;\nADDRESS_RADIX = HEX;\nDATA_RADIX = HEX;\nCONTENT\nBEGIN\n"
 	conteudoData: .space 1024  # Espaço para armazenar dados do arquivo .mif
 	mensagemErro: .asciiz "Há um erro de sintaxe!"
-	
+	mensagemErro_inst: .asciiz "Há uma instrução inexistente!"
+	mensagemErro_li_: .asciiz "*li não está na lista de instruções a serem compiladas e montadas."
 	armazenar_data_tmp: .space 22 	# armazenar temporariamente o dado a ser escrito em uma linha no .mif
 	output_string: .asciiz "\n00000000 : 00000000;"  # Para armazenar a linha que vai ser escrita no .mif
 	hex_digits: .asciiz "0123456789abcdef"
@@ -20,21 +21,22 @@
 	promptEsc: .asciiz "Local para salvar arquivo gerado a partir do data: "
 	
 	res:    .word    0x00132
-	
-	
+
 	num_instrucoes:     .byte 0
 	prompt_entrada:     .asciiz "Digite o diretório do arquivo de leitura: "
 	prompt_escrita:     .asciiz "Digite o diretório do arquivo de escrita: "
 	conteudoLinha: .asciiz "\n00000000 : 00000000;"
 	machine_code: .space 1200
+	tamanho_imm: .space 20
+	digitos_imm: .space 0
 	diretorio_escrita: .space 300
-	conteudoArquivo: .space 1024
+	conteudoArquivo: .space 2048
 	buffer_linha_bin: .space 33 #Buffer que armazena a instrução interira em binario
-	buffer_text: .space 64  # Buffer para armazenar a linha
+	buffer_text: .space 2048  # Buffer para armazenar a linha
 	inst_buffer: .space 64  # Buffer para armazenar a primeira palavra
-	arg1_buffer: .space 64
-	arg2_buffer: .space 64
-	arg3_buffer: .space 64
+	arg1_buffer: .space 100
+	arg2_buffer: .space 100
+	arg3_buffer: .space 100
 	n0: .byte  48
 	n1: .byte  49
 	n2: .byte  50
@@ -49,7 +51,7 @@
 	i: .byte  105
 	w: .byte  119
 	u: .byte  117
-	b: .byte  98
+	_b: .byte  98
 	a: .byte  97
 	d: .byte  100
 	n: .byte  110
@@ -66,7 +68,7 @@
 	g: .byte  103
 	z: .byte  122
 	x: .byte  120
-	j: .byte  106
+	_j: .byte  106
 	c: .byte  99
 	_$: .byte  36
 	lf: .byte  10
@@ -531,7 +533,7 @@ identifica_linha:
 	la $s0, buffer_linha_bin
 	#Inicialize um registrador para armazenar a palavra
 	
-	la $t1 , inst_buffer
+	la $t1, inst_buffer
 	la $t5, arg1_buffer
 	la $t6, arg2_buffer
 	la $t7, arg3_buffer	
@@ -544,7 +546,11 @@ identifica_linha:
     		lb $t3, 0($a1)
     		lb $t8, num_instrucoes
     		bne $t9, $t8, inst_atual
-	
+		
+		la $a0, diretorio_escrita    #endereço do arquivo
+		li $v0, 4
+		syscall
+		
     		# Verifique se o caractere é um espaço em branco ou nulo (fim da string)
     		beq $t3, 0, escrever_text
     		beq $t3, 32, check_inst		#se for espaço
@@ -582,6 +588,7 @@ identifica_linha:
 		jal compara_j
 		jal compara_d
 		jal compara_c
+		j rong_inst
 #----------------
      		j pega_inst
      			
@@ -597,7 +604,7 @@ identifica_linha:
      			beq $t0, $t4, lw.	#inst = lw(op: 100011)
      			lb $t4, u
      			beq $t0, $t4, lu_
-     			lb $t4, b
+     			lb $t4, _b
 			beq $t0, $t4, lb.	#inst = lb(op:100000) 
 			lb $t4, i
 			beq $t0, $t4, li.	#inst = li = lui(op: 001111) + ori (op: 001101)
@@ -674,8 +681,13 @@ identifica_linha:
      				sb $t4, 5($s0)
      				j typeI	
      			li.:	
-     				j done
-     				j typeI_li		#função que vai imprimir lui + ori
+     				j mensagemErro_li
+     				j done		#função que vai imprimir lui + ori
+     			mensagemErro_li:
+     				li $v0, 4
+				la $a0, mensagemErro_li_
+				syscall
+				j done
      	compara_a:   		#caracteres a comparar: $t4 / inst: $a2_____________________________
      		lb $t0 , 0($a2)
      		lb $t4, a
@@ -882,7 +894,7 @@ identifica_linha:
      			lb $t0 , 1($a2)
      			lb $t4, w
      			beq $t0, $t4, sw.	#inst = sw(op:101011) 
-     			lb $t4, b
+     			lb $t4, _b
      			beq $t0, $t4, sb.	#inst = sb(op:101000) 
      			lb $t4, u
      			beq $t0, $t4, su_
@@ -928,7 +940,7 @@ identifica_linha:
      			
      		su_:
      			lb $t0 , 2($a2)
-     			lb $t4, b
+     			lb $t4, _b
      			beq $t0, $t4, sub_
      			j rong_inst
      			
@@ -1502,7 +1514,7 @@ identifica_linha:
      		
      	compara_b:   		#caracteres a comparar: $t4 / inst: $a2_____________________________
      		lb $t0 , 0($a2)
-     		lb $t4, b
+     		lb $t4, _b
      		beq $t0, $t4, b_
      		jr $ra
      		b_:
@@ -1676,7 +1688,7 @@ identifica_linha:
      			
      	compara_j:   		#caracteres a comparar: $t4 / inst: $a2_____________________________
      		lb $t0 , 0($a2)
-     		lb $t4, j
+     		lb $t4, _j
      		beq $t0, $t4, j_
      		jr $ra
      		j_:
@@ -1783,22 +1795,30 @@ identifica_linha:
      			lb $t4, o
      			beq $t0, $t4, clo.	#inst = clo(op:)  PESQUISAR typeR?
      			j rong_inst
-		clo.:		#------------PESQUISAR
+		clo.:		#------------SPECIAL2
      				lb $t4, n1
      				lb $t9, n0
-     				sb $t4, 0($s0)
-     				sb $t9, 1($s0)
-     				sb $t9, 2($s0)
-     				sb $t9, 3($s0)
-     				sb $t4, 4($s0)
-     				sb $t4, 5($s0)
+     				sb $t9, 0($s0)
+     				sb $t4, 1($s0)
+     				sb $t4, 2($s0)
+     				sb $t4, 3($s0)
+     				sb $t9, 4($s0)
+     				sb $t9, 5($s0)
+     				#---SHMT
+     				sb $t4, 26($s0)
+     				sb $t9, 27($s0)
+     				sb $t9, 28($s0)
+     				sb $t9, 29($s0)
+     				sb $t9, 30($s0)
+     				sb $t4, 31($s0)
      				j typeR
      		
 #--------------------------------------------------------------------------------------------
 
      	typeR:				#$t5 = arg1_buffer / $t6 = arg2_buffer / $t7 = arg3_buffer
      		
-
+		li $t4, 5
+     		sb $t4, tamanho_imm
      		jal Rreseta_arg1
      		jal Rreseta_arg2
      		jal Rreseta_arg3
@@ -1813,7 +1833,7 @@ identifica_linha:
 		sb $zero, 0($t7)	#Coloca "Null" no fim do arg3
 		
 #		la $a0, arg1_buffer
-#     		li $v0, 4
+#    		li $v0, 4
 #     		syscall
 #		la $a0, arg2_buffer
 #     		li $v0, 4
@@ -1827,49 +1847,55 @@ identifica_linha:
      		j arg1_bin			#começa a converter os argumentos para binário
 		
      	typeI:
-     		bnez $s5, Ireseta_arg1
-     		bnez $s6, Ireseta_arg2
-     		bnez $s7, Ireseta_arg3
+     		li $t4, 16
+     		sb $t4, tamanho_imm
+     		jal Rreseta_arg1
+     		jal Rreseta_arg2
+     		jal Rreseta_arg3
 
      		lb $t4, virg
      		lb $t2, lf
      		li $t0, 0		#zera o contador de vírgulas
      		jal pega_reg	
+     		li $t0, 0		#zera o contador de vírgulas
 		sb $zero, 0($t5)	#Coloca "Null" no fim do arg1
 		sb $zero, 0($t6)	#Coloca "Null" no fim do arg2
 		sb $zero, 0($t7)	#Coloca "Null" no fim do arg3
-     		#la $a0, arg1_buffer
-     		#li $v0, 4		#Imprime arg1
-		#syscall
-		#la $a0, arg2_buffer
-    		#li $v0, 4		#Imprime arg2
-		#syscall
-		#la $a0, arg3_buffer
-     		#li $v0, 4		#Imprime arg3
-		#syscall
+#     		la $a0, arg1_buffer
+#     		li $v0, 4		#Imprime arg1
+#		syscall
+#		la $a0, arg2_buffer
+#   		li $v0, 4		#Imprime arg2
+#		syscall
+#		la $a0, arg3_buffer
+#     		li $v0, 4		#Imprime arg3
+#		syscall
      		j arg1_bin
      		
      	typeI_li:				#arg1= reg1, arg2=primeira metade do HEX(IMM-lui), arg2=primeira metade do HEX(IMM-ori)
-     		bnez $s5, Ireseta_arg1
-     		bnez $s6, Ireseta_arg2
-     		bnez $s7, Ireseta_arg3
+     		bnez $s5, Rreseta_arg1
+     		bnez $s6, Rreseta_arg2
+     		bnez $s7, Rreseta_arg3
 
      		lb $t4, virg
      		lb $t2, lf
      		li $t0, 0		#zera o contador de vírgulas
      		jal pega_reg
 		sb $zero, 0($t5)	#Coloca "Null" no fim do arg1
+		addi $s5, $s5, 1		#contador de caracteres +1
 		sb $zero, 0($t6)	#Coloca "Null" no fim do arg2
+		addi $s6, $s6, 1		#contador de caracteres +1
 		sb $zero, 0($t7)	#Coloca "Null" no fim do arg3
-     		la $a0, arg1_buffer
-     		li $v0, 4		#Imprime arg1
-		syscall
-		la $a0, arg2_buffer
-    		li $v0, 4		#Imprime arg2
-		syscall
-		la $a0, arg3_buffer
-     		li $v0, 4		#Imprime arg3
-		syscall
+		addi $s7, $s7, 1		#contador de caracteres +1
+#     		la $a0, arg1_buffer
+#     		li $v0, 4		#Imprime arg1
+#		syscall
+#		la $a0, arg2_buffer
+#    		li $v0, 4		#Imprime arg2
+#		syscall
+#		la $a0, arg3_buffer
+#     		li $v0, 4		#Imprime arg3
+#		syscall
 		j done
 		j arg1_bin			#começa a converter os argumentos para binário
 		
@@ -1886,17 +1912,6 @@ identifica_linha:
      		li $s6, 0
      		jr $ra
      	Rreseta_arg3:
-		sub $t7, $t7, $s7
-     		li $s7, 0
-     		jr $ra
-	Ireseta_arg1:
-     		li $s5, 0
-     		jr $ra
-     	Ireseta_arg2:
-     		sub $t6, $t6, $s6
-     		li $s6, 0
-     		jr $ra
-     	Ireseta_arg3:
 		sub $t7, $t7, $s7
      		li $s7, 0
      		jr $ra
@@ -1922,9 +1937,12 @@ identifica_linha:
 	add_arg2:
 		lb $t4, par			#carrega o caractere "("
 		lb $t3, 1($a1)
-		beq $t3, $t4, arg2_address	#se arg2 for um adress (preenche arg 2 e 3 juntos)
+		beq $t3, $t4, arg2_address0	#se arg2 for um adress de 1 digido (preenche arg 2 e 3 juntos)
+		lb $t3, 2($a1)
+		beq $t3, $t4, arg2_address00	#se arg2 for um adress de 2 digido (preenche arg 2 e 3 juntos)
+		lb $t3, 3($a1)
+		beq $t3, $t4, arg2_address000	#se arg2 for um adress de 3 digido (preenche arg 2 e 3 juntos)
 		lb $t4, x			#carrega o caractere "x" 
-		lb $t3, 1($a1)
 		beq $t3, $t4, arg2_hex		#se arg2 for um hex (preenche arg2 e 3 juntos)
 		lb $t4, virg
 		lb $t3, 0($a1)
@@ -1964,9 +1982,13 @@ identifica_linha:
 		addi $s6, $s6, 4
 		addi $t7, $t7, 4
 		j fim_da_linha_hex
-	arg2_address:				
+	
+	arg2_address0:	
+		li $t4, 1
+     		sb $t4, digitos_imm			
 		lb $t3, 0($a1)			#coloca a base no arg3
 		sb $t3, 0($t7)
+		addi $t7, $t7, 1
 		addi $s7, $s7, 1
 		lb $t3, 2($a1)			#coloca o offet no arg2
 		sb $t3, 0($t6)
@@ -1978,8 +2000,55 @@ identifica_linha:
 		sb $t3, 0($t6)
 		addi $t6, $t6, 1
 		addi $s6, $s6, 3
-		addi $t7, $t7, 3
-		j fim_da_linha_adress
+		j fim_da_linha_adress0
+	arg2_address00:
+		li $t4, 2
+     		sb $t4, digitos_imm	
+		lb $t3, 0($a1)			#coloca a base no arg3
+		sb $t3, 0($t7)
+		addi $t7, $t7, 1
+		addi $s7, $s7, 1
+		lb $t3, 1($a1)
+		sb $t3, 0($t7)
+		addi $t7, $t7, 1
+		addi $s7, $s7, 1
+		lb $t3, 3($a1)			#coloca o offet no arg2
+		sb $t3, 0($t6)
+		addi $t6, $t6, 1
+		lb $t3, 4($a1)
+		sb $t3, 0($t6)
+		addi $t6, $t6, 1
+		lb $t3, 5($a1)
+		sb $t3, 0($t6)
+		addi $t6, $t6, 1
+		addi $s6, $s6, 3
+		j fim_da_linha_adress00
+	arg2_address000:
+		li $t4, 3
+     		sb $t4, digitos_imm
+		lb $t3, 0($a1)			#coloca a base no arg3
+		sb $t3, 0($t7)
+		addi $t7, $t7, 1
+		addi $s7, $s7, 1
+		lb $t3, 1($a1)
+		sb $t3, 0($t7)
+		addi $t7, $t7, 1
+		addi $s7, $s7, 1
+		lb $t3, 2($a1)
+		sb $t3, 0($t7)
+		addi $t7, $t7, 1
+		addi $s7, $s7, 1
+		lb $t3, 4($a1)			#coloca o offet no arg2
+		sb $t3, 0($t6)
+		addi $t6, $t6, 1
+		lb $t3, 5($a1)
+		sb $t3, 0($t6)
+		addi $t6, $t6, 1
+		lb $t3, 6($a1)
+		sb $t3, 0($t6)
+		addi $t6, $t6, 1
+		addi $s6, $s6, 3
+		j fim_da_linha_adress000
 	add_arg3:
 		lb $t4, virg
 		lb $t3, 0($a1)
@@ -1995,9 +2064,38 @@ identifica_linha:
 		j pega_reg
 		
 	fim_da_linha:				#se a linha acabar no segundo argumento
+#	move $a0, $s7
+#	li $v0, 1
+#	syscall
+		li $t4, 1
+		beq $s7, $t4, aloca1
+		li $t4, 2
+		beq $s7, $t4, aloca2
+		li $t4, 3
+		beq $s7, $t4, aloca3
 		addi $a1, $a1, 1		#olha para a proxima linha
 		jr $ra
-	fim_da_linha_adress:
+		j done
+	aloca1:
+		sb $t4, digitos_imm
+		addi $a1, $a1, 1		#olha para a proxima linha
+		jr $ra
+	aloca2:
+		sb $t4, digitos_imm
+		addi $a1, $a1, 1		#olha para a proxima linha
+		jr $ra
+	aloca3:
+		sb $t4, digitos_imm
+		addi $a1, $a1, 1		#olha para a proxima linha
+		jr $ra
+		
+	fim_da_linha_adress0:
+		addi $a1, $a1, 7		#olha para a proxima linha
+		jr $ra
+	fim_da_linha_adress00:
+		addi $a1, $a1, 7		#olha para a proxima linha
+		jr $ra
+	fim_da_linha_adress000:
 		addi $a1, $a1, 7		#olha para a proxima linha
 		jr $ra
 	fim_da_linha_hex:
@@ -2005,8 +2103,11 @@ identifica_linha:
 		jr $ra
 		
 	rong_inst:	#instrução para printar algo na tela se encontrar uma instrução inexistente
-		li $v0, 10
+		
+		li $v0, 4
+		la $a0, mensagemErro_inst
 		syscall
+		j done
 #-----------------------------------------------CONVERTENDO PARA BINARIO---------------------------#
 	
 		
@@ -2959,7 +3060,7 @@ identifica_linha:
 				# $v0 Será usado para armazenar o valor inteiro final
 				# $t4 Usada para armazenar um dígito com seu peso decimal
 				# $t8 tem o valor de $s4, mas é usada para não afetar o valor do contador
-				beq $s7, 0, transforma_em_bin		# Condição de parada		
+				beq $s7, 0, seleciona_imm		# Condição de parada		
 				lb $t2, 0($a3)
 				addi $t4, $t2, -48			# Pegar número correspondente ao código ascii
 				addi $t8, $s7, -1	
@@ -2976,8 +3077,17 @@ identifica_linha:
 				addi $s7, $s7, -1			# Decrementa contador da quantidade de dígitos do número	
 				j loop_determinar_inteiro_text
 							
-
+		seleciona_imm:
+				lb $t4, tamanho_imm
+				beq $t4, 16, seleciona_digitos
+		seleciona_digitos:
+			lb $t4, digitos_imm
+			beq $t4, 1, transforma1_em_bin16
+			beq $t4, 2, transforma2_em_bin16
+			beq $t4, 3, transforma3_em_bin16
+			j done
 		transforma_em_bin:
+
 			li $t4, 0
 			subi $t7, $t7, 3
 			add $t0, $zero, $v0 	# put our input ($a0) into $t0
@@ -3001,8 +3111,10 @@ identifica_linha:
 			bne $t9, $zero, loop
 			sb $zero, 0($t7)
 			la $t7, arg3_buffer
+
 			j converteRHex
 			j done
+		
 			add0:
 				lb $t2, n0
 				sb $t2, 0($t7)	
@@ -3012,7 +3124,102 @@ identifica_linha:
 				sb $t2, 0($t7)
 				j print
 		
-		
+		transforma1_em_bin16:
+			li $t4, 0
+			subi $t7, $t7, 3
+			add $t0, $zero, $v0 	# put our input ($a0) into $t0
+			add $t8, $zero, $zero 	# Zero out $t1
+			addi $t4, $zero, 1 	# load 1 as a mask
+			sll $t4, $t4, 17 	# move the mask to appropriate position
+			addi $t9, $zero, 18 	# loop counter
+			loop1_16:
+			and $t8, $t0, $t4 	# and the input with the mask
+			beq $t8, $zero, add0_1_16 	# Branch to print if its 0
+			add $t8, $zero, $zero 	# Zero out $t1
+			addi $t8, $zero, 1 	# Put a 1 in $t1
+			j add1_1_16
+			print1_16:
+			addi $t7, $t7, 1
+			srl $t4, $t4, 1
+			addi $t9, $t9, -1
+			bne $t9, $zero, loop1_16
+			sb $zero, 0($t7)
+			la $t7, arg3_buffer
+
+			j converteRHex
+			
+			add0_1_16:
+				lb $t2, n0
+				sb $t2, 0($t7)	
+				j print1_16	
+			add1_1_16:
+				lb $t2, n1
+				sb $t2, 0($t7)
+				j print1_16
+		transforma2_em_bin16:
+			li $t4, 0
+			subi $t7, $t7, 3
+			add $t0, $zero, $v0 	# put our input ($a0) into $t0
+			add $t8, $zero, $zero 	# Zero out $t1
+			addi $t4, $zero, 1 	# load 1 as a mask
+			sll $t4, $t4, 16 	# move the mask to appropriate position
+			addi $t9, $zero, 17 	# loop counter
+			loop2_16:
+			and $t8, $t0, $t4 	# and the input with the mask
+			beq $t8, $zero, add0_2_16 	# Branch to print if its 0
+			add $t8, $zero, $zero 	# Zero out $t1
+			addi $t8, $zero, 1 	# Put a 1 in $t1
+			j add1_2_16
+			print2_16:
+			addi $t7, $t7, 1
+			srl $t4, $t4, 1
+			addi $t9, $t9, -1
+			bne $t9, $zero, loop2_16
+			sb $zero, 0($t7)
+			la $t7, arg3_buffer
+
+			j converteRHex
+			
+			add0_2_16:
+				lb $t2, n0
+				sb $t2, 0($t7)	
+				j print2_16	
+			add1_2_16:
+				lb $t2, n1
+				sb $t2, 0($t7)
+				j print2_16
+		transforma3_em_bin16:
+			li $t4, 0
+			subi $t7, $t7, 3
+			add $t0, $zero, $v0 	# put our input ($a0) into $t0
+			add $t8, $zero, $zero 	# Zero out $t1
+			addi $t4, $zero, 1 	# load 1 as a mask
+			sll $t4, $t4, 15 	# move the mask to appropriate position
+			addi $t9, $zero, 16 	# loop counter
+			loop3_16:
+			and $t8, $t0, $t4 	# and the input with the mask
+			beq $t8, $zero, add0_3_16 	# Branch to print if its 0
+			add $t8, $zero, $zero 	# Zero out $t1
+			addi $t8, $zero, 1 	# Put a 1 in $t1
+			j add1_3_16
+			print3_16:
+			addi $t7, $t7, 1
+			srl $t4, $t4, 1
+			addi $t9, $t9, -1
+			bne $t9, $zero, loop3_16
+			sb $zero, 0($t7)
+			la $t7, arg3_buffer
+
+			j converteRHex
+			
+			add0_3_16:
+				lb $t2, n0
+				sb $t2, 0($t7)	
+				j print3_16	
+			add1_3_16:
+				lb $t2, n1
+				sb $t2, 0($t7)
+				j print3_16
 		#printa erro se for outro número
 		j done
 			
@@ -3518,9 +3725,12 @@ identifica_linha:
 			lb $t8, 2($a2)
 			beq $t4, $t8, zxor_
 		zxor_:
-			lb $t4, i			#se a terceira letra da instrução é r
+						#se a terceira letra da instrução é r
 			lb $t8, 3($a2)
+			beq $zero, $t8, RS_em_6		# se é (xor)
+			lb $t4, i
 			beq $t4, $t8, padrao_I		# se é (xori)
+
 		
 		za_:
 			lb $t4, n			#se a segunda letra da instrução é n
@@ -3549,12 +3759,14 @@ identifica_linha:
 		zl_:
 			lb $t4, w
 			lb $t8, 1($a2)
-			beq $t4, $t8, padrao_I		#se a segunda letra da instrução é w
-			lb $t4, b
-			lb $t8, l($a2)
+			beq $t4, $t8, padrao_I		#se é (lw)
+			lb $t4, _b
 			beq $t4, $t8, padrao_I		#se é (lb)
 		
 		zs_:
+			lb $t4, w
+			lb $t8, 1($a2)
+			beq $t4, $t8, padrao_I		#se é (sw)
 			lb $t4, r
 			lb $t8, 1($a2)
 			beq $t4, $t8, zsr_		#se a segunda letra da instrução é r
@@ -3637,48 +3849,9 @@ identifica_linha:
 
 				j junta_buffer
 				
-			padrao_I_im:			#(op-a2-a1-imm)	
-				#--- arg2
-				lb $t4, 0($t6)
-     				sb $t4, 6($s0)
-     				lb $t4, 1($t6)
-     				sb $t4, 7($s0)
-     				lb $t4, 2($t6)
-     				sb $t4, 8($s0)
-     				lb $t4, 3($t6)
-     				sb $t4, 9($s0)
-     				lb $t4, 4($t6)
-     				sb $t4, 10($s0)
-     				#---arg1
-     				lb $t4, 0($t5)
-     				sb $t4, 11($s0)
-     				lb $t4, 1($t5)
-     				sb $t4, 12($s0)
-     				lb $t4, 2($t5)
-     				sb $t4, 13($s0)
-     				lb $t4, 3($t5)
-     				sb $t4, 14($s0)
-     				lb $t4, 4($t5)
-     				sb $t4, 15($s0)	
-     				#arg3
-				lb $t4, 0($t7)
-     				sb $t4, 27($s0)
-     				lb $t4, 1($t7)
-     				sb $t4, 28($s0)
-     				lb $t4, 2($t7)
-     				sb $t4, 29($s0)
-     				lb $t4, 3($t7)
-     				sb $t4, 30($s0)
-     				lb $t4, 4($t7)
-     				sb $t4, 31($s0)	
-     				sb $zero, 33($s0)
-     				la $a0, ($s0)
-				li $v0, 4
-				syscall
-     				j done
-     				
-     				j junta_buffer
+			
 			padrao_I:			#(op-a2-a1-a3)
+				
 				#--- arg2
 				lb $t4, 0($t6)
      				sb $t4, 6($s0)
@@ -3702,22 +3875,43 @@ identifica_linha:
      				lb $t4, 4($t5)
      				sb $t4, 15($s0)	
      				#arg3
-				lb $t4, 0($t7)
-     				sb $t4, 27($s0)
+     				lb $t4, 0($t7)
+     				sb $t4, 16($s0)
      				lb $t4, 1($t7)
-     				sb $t4, 28($s0)
+     				sb $t4, 17($s0)
      				lb $t4, 2($t7)
-     				sb $t4, 29($s0)
+     				sb $t4, 18($s0)
      				lb $t4, 3($t7)
-     				sb $t4, 30($s0)
+     				sb $t4, 19($s0)
      				lb $t4, 4($t7)
+     				sb $t4, 20($s0)
+     				lb $t4, 5($t7)
+     				sb $t4, 21($s0)
+     				lb $t4, 6($t7)
+     				sb $t4, 22($s0)
+     				lb $t4, 7($t7)
+     				sb $t4, 23($s0)
+     				lb $t4, 8($t7)
+     				sb $t4, 24($s0)
+     				lb $t4, 9($t7)
+     				sb $t4, 25($s0)
+     				lb $t4, 10($t7)
+     				sb $t4, 26($s0)
+				lb $t4, 11($t7)
+     				sb $t4, 27($s0)
+     				lb $t4, 12($t7)
+     				sb $t4, 28($s0)
+     				lb $t4, 13($t7)
+     				sb $t4, 29($s0)
+     				lb $t4, 14($t7)
+     				sb $t4, 30($s0)
+     				lb $t4, 15($t7)
      				sb $t4, 31($s0)	
      				sb $zero, 33($s0)
-     				la $a0, ($s0)
-				li $v0, 4
-				syscall
-				j done
-     				
+#     				la $a0, ($s0)
+#				li $v0, 4
+#				syscall
+#     				j done
      				j junta_buffer
 		RS_em_6:
             	#Usado no caso comum (RS, RT e RD)
@@ -3938,7 +4132,11 @@ salvar_bytes_machine_code:
 #-----------------------------#3° passo: converter para hexadecimal, escrever no arquivo e ir para a proxima linha-------------------------#
 
 escrever_text:
-	li $v0, 1  			# Chama a syscall para fechar o arquivo
+	la $a0, 777    #endereço do arquivo
+	li $v0, 1
+	syscall
+	j done
+
 	la $s2, machine_code
 	lb $s3, num_instrucoes 
 	
